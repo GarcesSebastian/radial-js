@@ -1,0 +1,25 @@
+{
+  "name": "radial-canvas-js",               
+  "version": "1.0.2",                    
+  "description": "A TypeScript library for creating interactive canvas elements.",
+  "main": "dist/index.js",               
+  "types": "dist/index.d.ts",            
+  "scripts": {
+    "build": "tsc",                      
+    "prepublishOnly": "npm run build"    
+  },
+  "files": [                             
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GarcesSebastian/radial-js"
+  },
+  "keywords": ["canvas", "typescript", "shapes", "interactive", "library"],
+  "author": "Sebxstt",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
