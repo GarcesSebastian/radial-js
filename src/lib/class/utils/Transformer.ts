@@ -117,6 +117,12 @@ export class Transformer {
         }
     }
 
+    private removeAnchors(): void {
+        this.anchors.forEach(anchor => {
+            anchor.destroy();
+        });
+    }
+
     private createBorder(rect: {x: number, y: number, width?: number, height?: number, radius?: number}): void {
         const size = rect.radius || rect.width || 0;
         const padding = this.config.padding;
@@ -189,6 +195,16 @@ export class Transformer {
         };
     }
 
+    private updatePosTransform(x: number, y: number): void {
+        this.border?.setAttrs({
+            x: x - (this.border?.getAttr("width") / 2),
+            y: y - (this.border?.getAttr("height") / 2)
+        })
+
+        this.removeAnchors();
+        this.createAnchors(this.border?.getBoundingRect()!);
+    }
+
     private dragStart(event: MouseEvent){
         this.isDragging = true;
         this.dragStartPos = this.radial.getPointerPosition(event);
@@ -197,6 +213,9 @@ export class Transformer {
     private drag(event: MouseEvent): void {
         if (!this.isDragging) return;
 
+        const pos = this.radial.getPointerPosition(event);
+        this.updatePosTransform(pos.x, pos.y);
+        
     }
 
     public add(nodes: Shape[]): void {
@@ -215,6 +234,5 @@ export class Transformer {
 
         this.createBorder(rect);
         this.createAnchors(rect);
-        console.log(rect);
     }
 }
