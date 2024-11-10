@@ -89,8 +89,7 @@ export class Shape {
                 this.config.x = this.initialX + dx;
                 this.config.y = this.initialY + dy;
 
-                const radial = this.getBoundingBox().radial;
-                this.redrawCanvas(radial);
+                this.redrawCanvas();
                 
                 this.emit("drag", {
                     x: this.config.x,
@@ -258,6 +257,25 @@ export class Shape {
         throw new Error("Method 'draw()' must be implemented.");
     }
 
+    public setAttr<K extends keyof ConfigShape>(attr: K, value: ConfigShape[K]): void {
+        this.config[attr] = value;
+        this.redrawCanvas();
+    }
+
+    public getAttr<K extends keyof ConfigShape>(attr: K): ConfigShape[K] {
+        return this.config[attr];
+    }
+
+    public setAttrs<K extends keyof ConfigShape>(attrs: { [key in K]: ConfigShape[K] }): void {
+        Object.assign(this.config, attrs);
+        this.redrawCanvas();
+    }
+
+    public getBoundingRect(): { x: number; y: number; width?: number; height?: number, radius?: number } {
+        const { x, y, width, height, radius } = this.getBoundingBox();
+        return { x, y, width: width || 0, height: height || 0, radius: radius || 0 };
+    }
+
     public destroy(): void {
         const radial = this.getBoundingBox().radial;
         const index = radial.children.indexOf(this);
@@ -266,7 +284,7 @@ export class Shape {
             radial.children.splice(index, 1);
         }
 
-        this.redrawCanvas(radial);
+        this.redrawCanvas();
 
         this.removeEventListeners();
     }
@@ -275,9 +293,11 @@ export class Shape {
         this.events = {};
     }
 
-    private redrawCanvas(radial: Radial): void {
+    private redrawCanvas(): void {
         this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
         
+        const radial = this.getBoundingBox().radial;
+
         radial.children.forEach(shape => {
             shape.render();
         });

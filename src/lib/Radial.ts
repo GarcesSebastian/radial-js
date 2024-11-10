@@ -1,7 +1,8 @@
-import { Circle, type ConfigCircle } from "./class/Shapes/Circle";
-import { Rect, type ConfigRect } from "./class/Shapes/Rect";
-import { Triangle, type ConfigTriangle } from "./class/Shapes/Triangle";
-import { Line, type ConfigLine } from "./class/Shapes/Line";
+import { Circle, type ConfigCircle } from "./class/shapes/Circle";
+import { Rect, type ConfigRect } from "./class/shapes/Rect";
+import { Triangle, type ConfigTriangle } from "./class/shapes/Triangle";
+import { Line, type ConfigLine } from "./class/shapes/Line";
+import { Transformer, type ConfigTransformer } from "./class/utils/Transformer";
 
 export class Radial {
     public children: any[] = [];
@@ -30,7 +31,7 @@ export class Radial {
         this.ctx.canvas.addEventListener("mousemove", (event) => {
             this.emit("mousemove", event);
             if (this.isDragging && this.dragStartPos) {
-                this.emit("dragmove", event);
+                this.emit("drag", event);
             }
         });
 
@@ -59,6 +60,13 @@ export class Radial {
 
     public getChildren(): any[] {
         return this.children;
+    }
+
+    public getPointerPosition(event: MouseEvent): { x: number, y: number } {
+        const rect = this.ctx.canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        return { x, y };
     }
 
     on(event: string, handler: Function) {
@@ -94,5 +102,9 @@ export class Radial {
 
     Line(config: ConfigLine) {
         return new Line(this, config);
+    }
+
+    Transformer(config: ConfigTransformer) {
+        return new Transformer(this, config);
     }
 }
