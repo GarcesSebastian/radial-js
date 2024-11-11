@@ -1,140 +1,235 @@
-# Radial JS
+# RadialCanvas.js
 
-Radial JS es una librería JavaScript para crear gráficos radiales de manera sencilla y eficiente.
+RadialCanvas.js is a lightweight, object-oriented canvas manipulation library for TypeScript/JavaScript. It provides an intuitive API for drawing shapes, handling events, and managing canvas interactions.
 
-## Características
-
-- Fácil de usar e integrar
-- Altamente personalizable
-- Soporte para múltiples tipos de gráficos radiales
-- Ligera y rápida
-
-## Instalación
-
-Puedes instalar Radial JS usando npm:
+## Installation
 
 ```bash
-npm install radial-js
+npm install radial-canvas-js
 ```
 
-O puedes incluirlo directamente desde un CDN:
+## Features
 
-```html
-<script src="https://cdn.example.com/radial-js/latest/radial.min.js"></script>
-```
+- 🎨 Easy shape creation (Circle, Rectangle, Triangle, Line)
+- 🖱️ Interactive elements with drag & drop support
+- 🎯 Event system (click, drag, mousemove, etc.)
+- 💫 Visual effects (shadows, borders, rounded corners)
+- 📏 Precise bounding box calculations
+- ⚡ Optimized performance with throttling and dirty flags
+- 🎯 Precise hit detection for all shapes
+- 🔄 Transformation system for resizing and rotating elements
 
-## Uso Básico
+## Basic Usage
 
-Aquí tienes un ejemplo básico de cómo usar Radial JS:
-
-```javascript
-import { Radial } from "radial-js";
-
-const canvas = document.getElementById('cw');
+```typescript
+// Get canvas context
+const canvas = document.getElementById('myCanvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d');
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-
+// Initialize Radial
 const radial = new Radial(ctx);
 
-const rect = radial.Rect({
-    x: 300,
-    y: 50,
-    width: 100,
-    height: 100,
-    color: 'blue',
-    borderColor: "red",
-    borderWidth: 2,
-    borderRadius: 5,
-    shadowColor: "yellow",
-    shadowOffset: {x: 0, y: 0},
-    shadowBlur: 10,
-    draggable: true
-});
-
+// Create shapes
 const circle = radial.Circle({
     x: 100,
     y: 100,
-    radius: 100,
-    color: 'yellow',
+    radius: 50,
+    color: 'red',
+    draggable: true
+});
+```
+
+## Shapes API
+
+### Common Properties (BaseConfig)
+
+All shapes share these base configuration options:
+
+```typescript
+interface BaseConfig {
+    x: number;              // X position
+    y: number;              // Y position
+    color: string;          // Fill color
+    borderWidth?: number;   // Border width
+    borderColor?: string;   // Border color
+    shadowColor?: string;   // Shadow color
+    shadowBlur?: number;    // Shadow blur radius
+    shadowOffset?: {        // Shadow offset
+        x: number;
+        y: number;
+    };
+    draggable?: boolean;    // Enable drag & drop
+}
+```
+
+### Transformer
+
+The Transformer is a powerful tool for manipulating shapes on the canvas. It allows interactive resizing and dragging of elements, similar to Konva.js.
+
+```typescript
+// Create a transformer
+const transformer = radial.Transformer({
+    color: "red",           // Control points color
+    borderWidth: 2,         // Transform area border width
+    borderColor: "white"    // Transform area border color
+});
+
+// Add transformer to elements on click
+radial.on("click", (evt) => {
+    const target = evt.canvasTarget;
+    if(!target) return;
+    
+    transformer.add([target]); // You can add multiple elements in the array
+});
+```
+
+#### Transformer Features:
+- Interactive shape resizing
+- Element dragging
+- Multiple control points
+- Support for transforming multiple shapes at once
+
+#### Complete Transformer Example
+
+```typescript
+// Create shapes
+const circle = radial.Circle({
+    x: 100,
+    y: 100,
+    radius: 50,
+    color: 'blue',
     draggable: true
 });
 
-const triangle = radial.Triangle({
-    x: 500,
-    y: 100,
-    radius: 50,
+const rect = radial.Rect({
+    x: 200,
+    y: 200,
+    width: 100,
+    height: 100,
     color: 'green',
     draggable: true
 });
 
-const line = radial.Line({
-    points: [100, 100, 200, 200, 300, 200],
-    color: 'red',
-    lineWidth: 10,
-    lineCap: 'round',
-    draggable: true
+// Create transformer
+const transformer = radial.Transformer({
+    color: "red",
+    borderWidth: 2,
+    borderColor: "white"
 });
 
-radial.on("click", (event) => {
-    console.log("Click canvas", event)
+// Handle shape selection
+radial.on("click", (evt) => {
+    const target = evt.canvasTarget;
+    
+    if(!target) {
+        // If clicking empty space, clear selection
+        transformer.add([]);
+        return;
+    }
+    
+    // Add clicked shape to transformer
+    transformer.add([target]);
 });
 
-radial.on("mousemove", (event) => {
+// Optional: Listen to transformer events
+transformer.on("resizestart", (evt) => {
+    console.log("Resize started:", evt);
 });
 
-radial.on("mouseup", (event) => {
-    console.log("Up canvas", event)
+transformer.on("resize", (evt) => {
+    console.log("Resize in progress:", evt);
 });
 
-radial.on("mousedown", (event) => {
-    console.log("Down canvas", event)
-});
-
-radial.on("wheel", (event) => {
-    console.log("Wheel canvas", event)
-});
-
-radial.on("dragstart", (event) => {
-    console.log("Arrastre iniciado en:", event.offsetX, event.offsetY);
-});
-
-radial.on("dragmove", (event) => {
-    console.log("Arrastre en movimiento a:", event.offsetX, event.offsetY);
-});
-
-radial.on("dragend", (event) => {
-    console.log("Arrastre finalizado en:", event.offsetX, event.offsetY);
-});
-
-radial.getChildren().forEach((item) => {
-    item.on("click", (event) => {
-        item.destroy();
-    });
-})
-
-rect.on("dragstart", (event) => {
-    console.log("Comenzó el arrastre:", event.x, event.y);
-});
-
-rect.on("drag", (event) => {
-    console.log("Arrastrando a:", event.x, event.y);
-});
-
-rect.on("dragend", (event) => {
-    console.log("Terminó el arrastre en:", event.x, event.y);
+transformer.on("resizeend", (evt) => {
+    console.log("Resize finished:", evt);
 });
 ```
 
-## Documentación
+## Examples
 
-Para más detalles y opciones avanzadas, consulta la [documentación oficial](https://example.com/radial-js/docs).
+### Interactive Drawing System
 
-## Contribuciones
+```typescript
+// Create multiple shapes
+const shapes = [
+    radial.Circle({
+        x: 100,
+        y: 100,
+        radius: 50,
+        color: 'red',
+        draggable: true
+    }),
+    radial.Rect({
+        x: 200,
+        y: 200,
+        width: 100,
+        height: 100,
+        color: 'blue',
+        draggable: true
+    }),
+    radial.Triangle({
+        x: 300,
+        y: 300,
+        radius: 50,
+        color: 'green',
+        draggable: true
+    })
+];
 
-Las contribuciones son bienvenidas. Por favor, abre un issue o envía un pull request en [GitHub](https://github.com/tuusuario/radial-js).
+// Create transformer
+const transformer = radial.Transformer({
+    color: "red",
+    borderWidth: 2,
+    borderColor: "white"
+});
 
-## Licencia
+// Handle selections
+let selectedShapes: Shape[] = [];
 
-Radial JS está licenciado bajo la [MIT License](LICENSE).
+radial.on("click", (evt) => {
+    const target = evt.canvasTarget;
+    
+    if(!target) {
+        selectedShapes = [];
+        transformer.add([]);
+        return;
+    }
+    
+    if(evt.event.shiftKey) {
+        // Multiple selection with Shift
+        const index = selectedShapes.indexOf(target);
+        if(index === -1) {
+            selectedShapes.push(target);
+        } else {
+            selectedShapes.splice(index, 1);
+        }
+    } else {
+        // Single selection
+        selectedShapes = [target];
+    }
+    
+    transformer.add(selectedShapes);
+});
+```
+
+## Performance Tips
+
+1. Use `draggable: true` only on shapes that need it
+2. Minimize shadow usage for better performance
+3. Take advantage of the dirty flag system - shapes are only redrawn when necessary
+4. Consider using the transformer only when needed, as it adds rendering complexity
+
+## Known Limitations
+
+1. Currently supports basic shapes (Circle, Rectangle, Triangle, Line)
+2. No built-in animation system (planned for future versions)
+3. One canvas instance per Radial instance
+4. Transformer may impact performance with many shapes
+
+## Contributing
+
+RadialCanvas.js is under active development. Contributions are welcome!
+
+## License
+
+(license here)
