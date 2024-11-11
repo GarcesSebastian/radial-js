@@ -1,6 +1,6 @@
 import type { Radial } from '../../Radial';
 import { Shape } from './Shape';
-import { BaseConfig } from '../../types/types';
+import type { BaseConfig } from '../../types/types';
 
 export interface ConfigLine extends BaseConfig {
     points: number[];

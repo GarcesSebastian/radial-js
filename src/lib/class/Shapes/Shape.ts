@@ -1,5 +1,5 @@
 import type { Radial } from "../../Radial";
-import { BaseConfig } from "../../types/types";
+import type { BaseConfig } from "../../types/types";
 
 // Types and Interfaces remain the same
 interface ShapeBoundingBox {

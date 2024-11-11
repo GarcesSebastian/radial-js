@@ -1,5 +1,5 @@
 import type { Radial } from '../../Radial';
-import { Point } from '../../types/types';
+import type { Point } from '../../types/types';
 import type { Shape } from '../Shapes/Shape';
 
 type AnchorPosition = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
