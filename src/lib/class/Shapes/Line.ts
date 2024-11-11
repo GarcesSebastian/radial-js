@@ -1,7 +1,8 @@
 import type { Radial } from '../../Radial';
-import { Shape, type ConfigShape } from './Shape';
+import { Shape } from './Shape';
+import { BaseConfig } from '../../types/types';
 
-export interface ConfigLine extends ConfigShape {
+export interface ConfigLine extends BaseConfig {
     points: number[];
     lineWidth?: number;
     lineJoin?: CanvasLineJoin;

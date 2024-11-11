@@ -1,8 +1,16 @@
-import { Circle, type ConfigCircle } from "./class/shapes/Circle";
-import { Rect, type ConfigRect } from "./class/shapes/Rect";
-import { Triangle, type ConfigTriangle } from "./class/shapes/Triangle";
-import { Line, type ConfigLine } from "./class/shapes/Line";
+import { Circle, type ConfigCircle } from "./class/Shapes/Circle";
+import { Rect, type ConfigRect } from "./class/Shapes/Rect";
+import { Triangle, type ConfigTriangle } from "./class/Shapes/Triangle";
+import { Line, type ConfigLine } from "./class/Shapes/Line";
 import { Transformer, type ConfigTransformer } from "./class/utils/Transformer";
+import type { Shape } from "./class/Shapes/Shape";
+
+interface CustomCanvasEvent extends MouseEvent {
+    canvasTarget?: Shape;
+    offsetX: number;
+    offsetY: number;
+    originalEvent: MouseEvent;
+}
 
 export class Radial {
     public children: any[] = [];
@@ -23,15 +31,91 @@ export class Radial {
         this.addEventListeners();
     }
 
+    private createCustomEvent(originalEvent: MouseEvent, target?: Shape): CustomCanvasEvent {
+        const customEvent = {
+            type: originalEvent.type,
+            bubbles: originalEvent.bubbles,
+            cancelable: originalEvent.cancelable,
+            composed: originalEvent.composed,
+            defaultPrevented: originalEvent.defaultPrevented,
+            eventPhase: originalEvent.eventPhase,
+            isTrusted: originalEvent.isTrusted,
+            timeStamp: originalEvent.timeStamp,
+
+            // Propiedades del MouseEvent
+            altKey: originalEvent.altKey,
+            button: originalEvent.button,
+            buttons: originalEvent.buttons,
+            clientX: originalEvent.clientX,
+            clientY: originalEvent.clientY,
+            ctrlKey: originalEvent.ctrlKey,
+            metaKey: originalEvent.metaKey,
+            movementX: originalEvent.movementX,
+            movementY: originalEvent.movementY,
+            offsetX: originalEvent.offsetX,
+            offsetY: originalEvent.offsetY,
+            pageX: originalEvent.pageX,
+            pageY: originalEvent.pageY,
+            screenX: originalEvent.screenX,
+            screenY: originalEvent.screenY,
+            shiftKey: originalEvent.shiftKey,
+
+            // Propiedades del canvas
+            canvasX: originalEvent.offsetX,
+            canvasY: originalEvent.offsetY,
+
+            // Target personalizado y evento original
+            canvasTarget: target,
+            originalEvent: originalEvent,
+
+            // Métodos del evento
+            preventDefault: () => originalEvent.preventDefault(),
+            stopPropagation: () => originalEvent.stopPropagation(),
+            stopImmediatePropagation: () => originalEvent.stopImmediatePropagation(),
+
+            // Getters para compatibilidad
+            get target() { return target || originalEvent.target; },
+            get currentTarget() { return originalEvent.currentTarget; },
+            get relatedTarget() { return originalEvent.relatedTarget; },
+        } as unknown as CustomCanvasEvent;
+
+        return customEvent;
+    }
+
     private addEventListeners() {
-        this.ctx.canvas.addEventListener("click", (event) => {
-            this.emit("click", event);
+        this.ctx.canvas.addEventListener("click", (event: MouseEvent) => {
+            let target;
+            
+            this.children.forEach(child => {
+                if(child.getAttr("ignore")) return;
+
+                const rect = child.getBoundingBox();
+                if (child.isPointInShape(event.offsetX, event.offsetY, rect)) {
+                    target = child;
+                }
+            });
+
+            const customEvent = this.createCustomEvent(event, target);
+            this.emit("click", customEvent);
         });
 
         this.ctx.canvas.addEventListener("mousemove", (event) => {
-            this.emit("mousemove", event);
+            let target;
+
+            this.children.forEach(child => {
+                if(child.getAttr("ignore")) return;
+                
+                const rect = child.getBoundingBox();
+                if (child.isPointInShape(event.offsetX, event.offsetY, rect)) {
+                    target = child;
+                }
+            });
+
+            const customEvent = this.createCustomEvent(event, target);
+            this.emit("mousemove", customEvent);
+
             if (this.isDragging && this.dragStartPos) {
-                this.emit("drag", event);
+                this.emit("drag", customEvent);
             }
         });
 

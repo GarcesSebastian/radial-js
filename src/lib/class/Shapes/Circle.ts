@@ -1,7 +1,8 @@
 import type { Radial } from '../../Radial';
-import { Shape, type ConfigShape } from './Shape';
+import { Shape } from './Shape';
+import { BaseConfig } from '../../types/types';
 
-export interface ConfigCircle extends ConfigShape {
+export interface ConfigCircle extends BaseConfig {
     radius: number;
 }
 

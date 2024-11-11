@@ -1,4 +1,5 @@
 import type { Radial } from "../../Radial";
+import { BaseConfig } from "../../types/types";
 
 // Types and Interfaces remain the same
 interface ShapeBoundingBox {
@@ -21,19 +22,7 @@ interface BoundingRect {
     radius?: number;
 }
 
-export interface ConfigShape {
-    x: number;
-    y: number;
-    color: string;
-    borderWidth?: number;
-    borderColor?: string;
-    shadowColor?: string;
-    shadowBlur?: number;
-    shadowOffset?: { x: number, y: number };
-    draggable?: boolean;
-}
-
-export interface ConfigShapeGlobal extends ConfigShape {
+export interface ConfigShapeGlobal extends BaseConfig {
     width: number;
     height: number;
     radius: number;
@@ -43,7 +32,7 @@ export class Shape {
     private static readonly THROTTLE_DELAY = 16;
 
     protected ctx: CanvasRenderingContext2D;
-    protected config: ConfigShape;
+    protected config: BaseConfig;
     protected dirtyFlag: boolean = true;
 
     private events: Map<string, Set<Function>>;
@@ -55,7 +44,7 @@ export class Shape {
     private lastDragUpdate: number = 0;
     private rafId: number | null = null;
 
-    constructor(ctx: CanvasRenderingContext2D, config: ConfigShape) {
+    constructor(ctx: CanvasRenderingContext2D, config: BaseConfig) {
         this.ctx = ctx;
         this.config = {
             ...config,
@@ -65,19 +54,15 @@ export class Shape {
         this.addEventListeners();
     }
 
-    public setAttr<K extends keyof ConfigShapeGlobal>(attr: K, value: ConfigShapeGlobal[K]): void {
-        if ((this.config as ConfigShapeGlobal)[attr] !== value) {
-            (this.config as ConfigShapeGlobal)[attr] = value;
+    public setAttr(attr: string, value: any): void {
+        if ((this.config as any)[attr] !== value) {
+            (this.config as any)[attr] = value;
             this.dirtyFlag = true;
             this.requestRedraw();
         }
     }
 
-    public getAttr<K extends keyof ConfigShapeGlobal>(attr: K): ConfigShapeGlobal[K] {
-        return (this.config as ConfigShapeGlobal)[attr];
-    }
-
-    public setAttrs<K extends keyof ConfigShapeGlobal>(attrs: { [key in K]: ConfigShapeGlobal[K] }): void {
+    public setAttrs(attrs: { [key: string]: any }): void {
         let hasChanged = false;
         for (const [key, value] of Object.entries(attrs)) {
             if ((this.config as any)[key] !== value) {
@@ -89,6 +74,10 @@ export class Shape {
             this.dirtyFlag = true;
             this.requestRedraw();
         }
+    }
+
+    public getAttr(attr: any): any {
+        return (this.config as any)[attr];
     }
 
     public render() {
@@ -198,12 +187,8 @@ export class Shape {
 
             if (isCurrentlyOverShape && !isOverShape) {
                 isOverShape = true;
-                canvas.style.cursor = this.config.draggable ? 'move' : 'pointer';
             } else if (!isCurrentlyOverShape && isOverShape) {
                 isOverShape = false;
-                if (!this.isDragging) {
-                    canvas.style.cursor = 'default';
-                }
             }
 
             if (this.isDragging && this.config.draggable) {
@@ -312,11 +297,11 @@ export class Shape {
                 const shadowPadding = this.calculateShadowPadding();
 
                 return {
-                    x: x - totalRadius - shadowPadding.left,
-                    y: y - totalRadius - shadowPadding.top,
+                    x: x,
+                    y: y,
                     width: totalRadius * 2 + shadowPadding.width,
                     height: totalRadius * 2 + shadowPadding.height,
-                    radius: totalRadius
+                    radius: radius
                 };
             }
             case "Triangle": {
@@ -390,7 +375,7 @@ export class Shape {
         };
     }
 
-    private isPointInShape(x: number, y: number, rect: ShapeBoundingBox): boolean {
+    protected isPointInShape(x: number, y: number, rect: ShapeBoundingBox): boolean {
         switch (rect.shape) {
             case "Rect":
                 return (

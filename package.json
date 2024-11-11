@@ -1,6 +1,6 @@
 {
   "name": "radial-canvas-js",               
-  "version": "1.0.3",                    
+  "version": "1.0.4",                    
   "description": "A TypeScript library for creating interactive canvas elements.",
   "main": "dist/index.js",               
   "types": "dist/index.d.ts",            
