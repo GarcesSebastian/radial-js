@@ -39,6 +39,147 @@ const circle = radial.Circle({
 });
 ```
 
+## Interactive Collision Demo
+
+Here's an example that demonstrates the library's capabilities with an interactive collision detection visualization:
+
+```typescript
+const main = () => {
+    const canvas = document.querySelector("#cw-demo");
+    if(!canvas) return;
+    
+    const ctx = canvas.getContext("2d");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    
+    const radial = new Radial(ctx);
+    
+    // Store collision lines
+    const collisionLines = new Map();
+    
+    // Create circle with random movement
+    const createCircle = (x, y) => {
+        const circle = radial.Circle({
+            x: x,
+            y: y,
+            radius: 20,
+            color: "rgba(0, 0, 0, 0.5)",
+            borderColor: "white",
+            borderWidth: 2,
+            shadowColor: "white",
+            shadowBlur: 10,
+            shadowOffsetX: 5,
+            shadowOffsetY: 5,
+            draggable: false
+        });
+        
+        circle.setAttrs({
+            dirX: Math.random() * 2 - 1,
+            dirY: Math.random() * 2 - 1,
+            speed: Math.random() * (5 - 1) + 1,
+            isColliding: false,
+            id: Date.now() + Math.random() 
+        });
+    };
+    
+    // Create circles on drag events
+    ["dragstart", "drag", "dragend"].forEach(eventName => {
+        radial.on(eventName, (event) => {
+            if(!event.canvasTarget) {
+                createCircle(event.clientX, event.clientY);
+            }
+        });
+    });
+
+    // Check for collisions between circles
+    const checkCollisions = (item) => {
+        const itemId = item.getAttr('id');
+        const activeCollisions = new Set();
+        
+        radial.children.forEach(child => {
+            if(child === item) return;
+            
+            const childId = child.getAttr('id');
+            const distance = Math.sqrt(
+                Math.pow(item.getAttr('x') - child.getAttr('x'), 2) +
+                Math.pow(item.getAttr('y') - child.getAttr('y'), 2)
+            );
+            
+            if (distance <= 200) {
+                const lineId = [itemId, childId].sort().join('-');
+                activeCollisions.add(lineId);
+                
+                // Create or update collision line
+                if (!collisionLines.has(lineId)) {
+                    collisionLines.set(lineId, radial.Line({
+                        points: [item.getAttr('x'), item.getAttr('y'), 
+                                child.getAttr('x'), child.getAttr('y')],
+                        color: "rgba(0, 0, 0, 1)",
+                        lineWidth: 2,
+                        lineCap: "round",
+                        borderColor: "white",
+                    }));
+                } else {
+                    collisionLines.get(lineId).setAttrs({
+                        points: [item.getAttr('x'), item.getAttr('y'), 
+                                child.getAttr('x'), child.getAttr('y')]
+                    });
+                }
+            }
+        });
+        
+        // Clean up inactive collision lines
+        Array.from(collisionLines.keys()).forEach(lineId => {
+            if (!activeCollisions.has(lineId) && lineId.includes(itemId)) {
+                collisionLines.get(lineId).destroy();
+                collisionLines.delete(lineId);
+            }
+        });
+    };
+    
+    // Update loop
+    const update = () => {
+        radial.children.forEach(item => {
+            if (item.config.radius) {
+                // Update position
+                const {x, y, radius} = item.getBoundingRect();
+                const dirX = item.getAttr("dirX");
+                const dirY = item.getAttr("dirY");
+                const speed = item.getAttr("speed");
+                
+                let nextX = x + dirX * speed;
+                let nextY = y + dirY * speed;
+                
+                // Bounce off walls
+                if(nextX + radius >= canvas.width || nextX - radius <= 0) {
+                    item.setAttrs({ dirX: -dirX });
+                    nextX = x - dirX * speed;
+                }
+                if(nextY + radius >= canvas.height || nextY - radius <= 0) {
+                    item.setAttrs({ dirY: -dirY });
+                    nextY = y - dirY * speed;
+                }
+                
+                item.setAttrs({ x: nextX, y: nextY });
+                checkCollisions(item);
+            }
+        });
+        
+        requestAnimationFrame(update);
+    };
+    
+    update();
+};
+```
+
+This demo showcases:
+- Dynamic circle creation on drag
+- Collision detection between circles
+- Visual connection lines between nearby circles
+- Smooth bouncing animation off canvas boundaries
+- Shadow and border effects
+- Efficient update loop with requestAnimationFrame
+
 ## Shapes API
 
 ### Common Properties (BaseConfig)
