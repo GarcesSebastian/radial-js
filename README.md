@@ -66,11 +66,6 @@ const main = () => {
             color: "rgba(0, 0, 0, 0.5)",
             borderColor: "white",
             borderWidth: 2,
-            shadowColor: "white",
-            shadowBlur: 10,
-            shadowOffsetX: 5,
-            shadowOffsetY: 5,
-            draggable: false
         });
         
         circle.setAttrs({
