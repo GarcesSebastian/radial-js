@@ -1,19 +1,9 @@
 import type { Radial } from "../../Radial";
-import type { BaseConfig } from "../../types/types";
+import type { BaseConfig, CollisionState, ShapeBoundingBox } from "../../types/types";
+import { calculateArea, calculateShadowPadding, calculateTriangleVertices } from "../../utils/lib";
+import { Events } from "../utils/Events";
 
 // Types and Interfaces remain the same
-interface ShapeBoundingBox {
-    x: number;
-    y: number;
-    width?: number;
-    height?: number;
-    radius?: number;
-    points?: number[];
-    lineWidth?: number;
-    shape: string;
-    radial: Radial;
-}
-
 interface BoundingRect {
     x: number;
     y: number;
@@ -22,36 +12,104 @@ interface BoundingRect {
     radius?: number;
 }
 
+export interface IShapeEventDelegate {
+    getBoundingBox(): ShapeBoundingBox;
+    isPointInShape(x: number, y: number, rect: ShapeBoundingBox): boolean;
+    isDraggable(): boolean;
+    getPosition(): { x: number; y: number };
+    updatePosition(position: { x: number; y: number }): void;
+    isIgnored(): boolean;
+    isCollisionEnabled(): boolean;
+    getCollisionState(): CollisionState;
+    updateCollisionState(state: Partial<CollisionState>): void;
+}
+
 export interface ConfigShapeGlobal extends BaseConfig {
     width: number;
     height: number;
     radius: number;
 }
 
-export class Shape {
-    private static readonly THROTTLE_DELAY = 16;
-
+export class Shape implements IShapeEventDelegate {
     protected ctx: CanvasRenderingContext2D;
     protected config: BaseConfig;
     protected dirtyFlag: boolean = true;
-
-    private events: Map<string, Set<Function>>;
-    private isDragging: boolean = false;
-    private dragStartX: number = 0;
-    private dragStartY: number = 0;
-    private initialX: number = 0;
-    private initialY: number = 0;
-    private lastDragUpdate: number = 0;
     private rafId: number | null = null;
+    private eventManager: Events;
+    private collisionState: CollisionState = {
+        isColliding: false,
+        previousCollision: false,
+        currentCollisions: []
+    };
 
     constructor(ctx: CanvasRenderingContext2D, config: BaseConfig) {
         this.ctx = ctx;
         this.config = {
             ...config,
-            draggable: config.draggable ?? false
+            draggable: config.draggable ?? false,
+            collision: config.collision ?? false,
+            closest: config.closest ?? false,
+            closestDistance: config.closestDistance ?? 100,
+            trail: config.trail ?? false,
+            trailAlpha: config.trailAlpha ?? 0.1
         };
-        this.events = new Map();
-        this.addEventListeners();
+        this.eventManager = new Events(this, ctx);
+    }
+
+    public on(event: string, handler: Function) {
+        this.eventManager.on(event, handler);
+    }
+
+    public off(event: string, handler: Function) {
+        this.eventManager.off(event, handler);
+    }
+
+    protected emit(event: string, ...args: any[]) {
+        this.eventManager.emit(event, ...args);
+    }
+    public getEventDelegate(): IShapeEventDelegate {
+        return this;
+    }
+
+    public isDraggable(): boolean {
+        return this.config.draggable!;
+    }
+
+    public getPosition(): { x: number; y: number } {
+        return {
+            x: this.config.x,
+            y: this.config.y
+        };
+    }
+
+    public updatePosition(position: { x: number; y: number }): void {
+        this.config.x = position.x;
+        this.config.y = position.y;
+        this.setDirtyFlag(true);
+        this.requestRedraw();
+    }
+
+    public isIgnored(): boolean {
+        return !!this.config.ignore;
+    }
+
+    public isCollisionEnabled(): boolean {
+        return !!this.config.collision;
+    }
+
+    public getCollisionState(): CollisionState {
+        return this.collisionState;
+    }
+
+    public updateCollisionState(state: Partial<CollisionState>): void {
+        this.collisionState = {
+            ...this.collisionState,
+            ...state
+        };
+    }
+
+    public setDirtyFlag(value: boolean): void {
+        this.dirtyFlag = value;
     }
 
     public setAttr(attr: string, value: any): void {
@@ -80,195 +138,16 @@ export class Shape {
         return (this.config as any)[attr];
     }
 
-    public render() {
-        if (!this.dirtyFlag) return;
-        
-        this.applyStyles();
-        this.draw();
-        
-        if (this.config.borderWidth && this.config.borderColor) {
-            this.ctx.stroke();
-        }
-        
-        this.ctx.restore();
-        this.dirtyFlag = false;
+    public getAttrs(): { [key: string]: any } {
+        return {...this.config };
     }
 
-    public destroy(): void {
-        if (this.rafId !== null) {
-            cancelAnimationFrame(this.rafId);
-        }
-        
-        const radial = this.getBoundingBox().radial;
-        const index = radial.children.indexOf(this);
-        
-        if (index !== -1) {
-            radial.children.splice(index, 1);
-            this.requestFullCanvasRedraw(radial);
-        }
-
-        this.events.clear();
+    public getConfig(): BaseConfig {
+        return this.config;
     }
 
-    private requestFullCanvasRedraw(radial: Radial): void {
-        const canvas = this.ctx.canvas;
-        this.ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        radial.children.forEach(shape => {
-            shape.dirtyFlag = true;
-            shape.render();
-        });
-    }
-
-    public on(event: string, handler: Function) {
-        if (!this.events.has(event)) {
-            this.events.set(event, new Set());
-        }
-        this.events.get(event)!.add(handler);
-    }
-
-    public off(event: string, handler: Function) {
-        const handlers = this.events.get(event);
-        if (handlers) {
-            handlers.delete(handler);
-        }
-    }
-
-    protected emit(event: string, ...args: any[]) {
-        const handlers = this.events.get(event);
-        if (handlers) {
-            handlers.forEach(handler => handler(...args));
-        }
-    }
-
-    protected getBoundingBox(): ShapeBoundingBox {
+    public getBoundingBox(): ShapeBoundingBox {
         throw new Error("Method 'getBoundingBox()' must be implemented.");
-    }
-
-    protected draw(): void {
-        throw new Error("Method 'draw()' must be implemented.");
-    }
-
-    private applyStyles() {
-        const { color, borderWidth, borderColor, shadowColor, shadowBlur, shadowOffset } = this.config;
-        this.ctx.save();
-
-        this.ctx.shadowColor = 'rgba(0, 0, 0, 0)';
-        this.ctx.shadowBlur = 0;
-        this.ctx.shadowOffsetX = 0;
-        this.ctx.shadowOffsetY = 0;
-
-        if (shadowColor) {
-            this.ctx.shadowColor = shadowColor;
-            if (shadowBlur !== undefined) {
-                this.ctx.shadowBlur = shadowBlur;
-            }
-            if (shadowOffset) {
-                this.ctx.shadowOffsetX = shadowOffset.x;
-                this.ctx.shadowOffsetY = shadowOffset.y;
-            }
-        }
-
-        if (borderWidth && borderColor) {
-            this.ctx.lineWidth = borderWidth;
-            this.ctx.strokeStyle = borderColor;
-        }
-
-        this.ctx.fillStyle = color;
-    }
-
-    private addEventListeners() {
-        const canvas = this.ctx.canvas;
-        let isOverShape = false;
-
-        const handleMouseMove = (event: MouseEvent) => {
-            const rect = this.getBoundingBox();
-            const isCurrentlyOverShape = this.isPointInShape(event.offsetX, event.offsetY, rect);
-
-            if (isCurrentlyOverShape && !isOverShape) {
-                isOverShape = true;
-            } else if (!isCurrentlyOverShape && isOverShape) {
-                isOverShape = false;
-            }
-
-            if (this.isDragging && this.config.draggable) {
-                this.throttledDragUpdate(event);
-            }
-        };
-
-        canvas.addEventListener("mousemove", handleMouseMove, { passive: true });
-        
-        canvas.addEventListener("mousedown", (event) => {
-            const rect = this.getBoundingBox();
-            if (this.isPointInShape(event.offsetX, event.offsetY, rect)) {
-                if (this.config.draggable) {
-                    this.isDragging = true;
-                    this.dragStartX = event.offsetX;
-                    this.dragStartY = event.offsetY;
-                    this.initialX = this.config.x;
-                    this.initialY = this.config.y;
-                    this.emit("dragstart", { x: this.config.x, y: this.config.y, event });
-                }
-                this.emit("mousedown", event);
-            }
-        }, { passive: true });
-
-        canvas.addEventListener("mouseup", (event) => {
-            if (this.isDragging) {
-                this.isDragging = false;
-                this.emit("dragend", { x: this.config.x, y: this.config.y, event });
-            }
-            if (this.isPointInShape(event.offsetX, event.offsetY, this.getBoundingBox())) {
-                this.emit("mouseup", event);
-            }
-        }, { passive: true });
-
-        canvas.addEventListener("click", (event) => {
-            const rect = this.getBoundingBox();
-            if (this.isPointInShape(event.offsetX, event.offsetY, rect)) {
-                this.emit("click", { children: rect.radial.getChildren(), event });
-            }
-        }, { passive: true });
-
-        canvas.addEventListener("mouseleave", () => {
-            if (this.isDragging) {
-                this.isDragging = false;
-                this.emit("dragend", { x: this.config.x, y: this.config.y });
-            }
-        }, { passive: true });
-    }
-
-    private throttledDragUpdate = (event: MouseEvent) => {
-        const currentTime = performance.now();
-        if (currentTime - this.lastDragUpdate >= Shape.THROTTLE_DELAY) {
-            const dx = event.offsetX - this.dragStartX;
-            const dy = event.offsetY - this.dragStartY;
-            this.config.x = this.initialX + dx;
-            this.config.y = this.initialY + dy;
-
-            this.dirtyFlag = true;
-            this.requestRedraw();
-            
-            this.emit("drag", {
-                x: this.config.x,
-                y: this.config.y,
-                event: event
-            });
-
-            this.lastDragUpdate = currentTime;
-        }
-    };
-
-    private requestRedraw(): void {
-        if (this.rafId === null) {
-            this.rafId = requestAnimationFrame(() => {
-                this.rafId = null;
-                if (this.dirtyFlag) {
-                    const radial = this.getBoundingBox().radial;
-                    this.requestFullCanvasRedraw(radial);
-                }
-            });
-        }
     }
 
     public getBoundingRect(): BoundingRect {
@@ -281,7 +160,7 @@ export class Shape {
                 const { x, y, width = 0, height = 0 } = box;
                 const borderWidth = this.config.borderWidth || 0;
                 const halfBorder = borderWidth / 2;
-                const shadowPadding = this.calculateShadowPadding();
+                const shadowPadding = calculateShadowPadding(this.config.shadowOffset!, this.config.shadowBlur);
 
                 return {
                     x: x - halfBorder - shadowPadding.left,
@@ -294,7 +173,7 @@ export class Shape {
                 const { x, y, radius = 0 } = box;
                 const borderWidth = this.config.borderWidth || 0;
                 const totalRadius = radius + borderWidth / 2;
-                const shadowPadding = this.calculateShadowPadding();
+                const shadowPadding = calculateShadowPadding(this.config.shadowOffset!, this.config.shadowBlur);
 
                 return {
                     x: x,
@@ -307,7 +186,7 @@ export class Shape {
             case "Triangle": {
                 const { x, y, radius = 0 } = box;
                 const borderWidth = this.config.borderWidth || 0;
-                const vertices = this.calculateTriangleVertices(x, y, radius);
+                const vertices = calculateTriangleVertices(x, y, radius);
                 
                 vertices.forEach(([vx, vy]) => {
                     minX = Math.min(minX, vx);
@@ -316,7 +195,7 @@ export class Shape {
                     maxY = Math.max(maxY, vy);
                 });
 
-                const shadowPadding = this.calculateShadowPadding();
+                const shadowPadding = calculateShadowPadding(this.config.shadowOffset!, this.config.shadowBlur);
                 const width = maxX - minX + borderWidth + shadowPadding.width;
                 const height = maxY - minY + borderWidth + shadowPadding.height;
 
@@ -341,7 +220,7 @@ export class Shape {
                     maxY = Math.max(maxY, py);
                 }
 
-                const shadowPadding = this.calculateShadowPadding();
+                const shadowPadding = calculateShadowPadding(this.config.shadowOffset!, this.config.shadowBlur);
 
                 return {
                     x: minX - halfLineWidth - shadowPadding.left,
@@ -355,27 +234,7 @@ export class Shape {
         }
     }
 
-    private calculateShadowPadding(): { top: number; right: number; bottom: number; left: number; width: number; height: number } {
-        const { shadowBlur = 0, shadowOffset } = this.config;
-        const offsetX = shadowOffset?.x || 0;
-        const offsetY = shadowOffset?.y || 0;
-
-        const left = Math.max(0, shadowBlur - offsetX);
-        const right = Math.max(0, shadowBlur + offsetX);
-        const top = Math.max(0, shadowBlur - offsetY);
-        const bottom = Math.max(0, shadowBlur + offsetY);
-
-        return {
-            top,
-            right,
-            bottom,
-            left,
-            width: left + right,
-            height: top + bottom
-        };
-    }
-
-    protected isPointInShape(x: number, y: number, rect: ShapeBoundingBox): boolean {
+    public isPointInShape(x: number, y: number, rect: ShapeBoundingBox): boolean {
         switch (rect.shape) {
             case "Rect":
                 return (
@@ -390,13 +249,13 @@ export class Shape {
                 return dx * dx + dy * dy <= rect.radius! * rect.radius!;
             }
             case "Triangle": {
-                const vertices = this.calculateTriangleVertices(rect.x, rect.y, rect.radius!);
+                const vertices = calculateTriangleVertices(rect.x, rect.y, rect.radius!);
                 const [[x1, y1], [x2, y2], [x3, y3]] = vertices;
         
-                const totalArea = this.calculateArea(x1, y1, x2, y2, x3, y3);
-                const area1 = this.calculateArea(x, y, x2, y2, x3, y3);
-                const area2 = this.calculateArea(x1, y1, x, y, x3, y3);
-                const area3 = this.calculateArea(x1, y1, x2, y2, x, y);
+                const totalArea = calculateArea(x1, y1, x2, y2, x3, y3);
+                const area1 = calculateArea(x, y, x2, y2, x3, y3);
+                const area2 = calculateArea(x1, y1, x, y, x3, y3);
+                const area3 = calculateArea(x1, y1, x2, y2, x, y);
         
                 return Math.abs(totalArea - (area1 + area2 + area3)) < 0.1;
             }
@@ -438,15 +297,107 @@ export class Shape {
         }
     }
 
-    private calculateArea(x1: number, y1: number, x2: number, y2: number, x3: number, y3: number): number {
-        return Math.abs((x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)) / 2);
+    public destroy(): void {
+        if (this.rafId !== null) {
+            cancelAnimationFrame(this.rafId);
+        }
+        
+        const radial = this.getBoundingBox().radial;
+        const index = radial.children.indexOf(this);
+        
+        if (index !== -1) {
+            radial.children.splice(index, 1);
+            this.requestFullCanvasRedraw(radial);
+        }
+
+        this.eventManager.clearEvents();
     }
 
-    private calculateTriangleVertices(x: number, y: number, radius: number): [number, number][] {
-        return [
-            [x, y],
-            [x + radius, y + radius],
-            [x - radius, y + radius]
-        ];
+    public bounce(duration: number): void {
+        const startTime = performance.now();
+    
+        const animate = (currentTime: number) => {
+            const elapsedTime = currentTime - startTime;
+    
+            if (elapsedTime >= duration) {
+                this.destroy();
+            } else {
+                requestAnimationFrame(animate);
+            }
+        };
+    
+        requestAnimationFrame(animate);
+    }
+
+    private requestFullCanvasRedraw(radial: Radial): void {
+        const canvas = this.ctx.canvas;
+        this.ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        this.eventManager.handleCollision(radial);
+    
+        // Render all shapes
+        radial.children.forEach(shape => {
+            shape.dirtyFlag = true;
+            shape.render();
+        });
+    }
+
+    public requestRedraw(): void {
+        if (this.rafId === null) {
+            this.rafId = requestAnimationFrame(() => {
+                this.rafId = null;
+                if (this.dirtyFlag) {
+                    const radial = this.getBoundingBox().radial;
+                    this.requestFullCanvasRedraw(radial);
+                }
+            });
+        }
+    }
+
+    private applyStyles() {
+        const { color, borderWidth, borderColor, shadowColor, shadowBlur, shadowOffset } = this.config;
+        this.ctx.save();
+
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0)';
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowOffsetX = 0;
+        this.ctx.shadowOffsetY = 0;
+
+        if (shadowColor) {
+            this.ctx.shadowColor = shadowColor;
+            if (shadowBlur !== undefined) {
+                this.ctx.shadowBlur = shadowBlur;
+            }
+            if (shadowOffset) {
+                this.ctx.shadowOffsetX = shadowOffset.x;
+                this.ctx.shadowOffsetY = shadowOffset.y;
+            }
+        }
+
+        if (borderWidth && borderColor) {
+            this.ctx.lineWidth = borderWidth;
+            this.ctx.strokeStyle = borderColor;
+        }
+
+        this.setAttr("colorBackup", color);
+        this.ctx.fillStyle = color;
+    }
+
+    protected draw(): void {
+        throw new Error("Method 'draw()' must be implemented.");
+    }
+
+    protected render() {
+        if (!this.dirtyFlag) return;
+        
+        this.applyStyles();
+        this.draw();
+        
+        if (this.config.borderWidth && this.config.borderColor) {
+            this.ctx.stroke();
+        }
+        
+        this.ctx.restore();
+        this.dirtyFlag = false;
     }
 }

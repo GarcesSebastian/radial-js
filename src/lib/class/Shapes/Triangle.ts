@@ -34,7 +34,7 @@ export class Triangle extends Shape {
         }
     }
 
-    protected getBoundingBox(): { x: number; y: number; radius: number; shape: string, radial: Radial } {
+    public getBoundingBox(): { x: number; y: number; radius: number; shape: string, radial: Radial } {
         const { x, y, radius } = this.config;
         return { x, y, radius, shape: this.shape, radial: this.radial };
     }

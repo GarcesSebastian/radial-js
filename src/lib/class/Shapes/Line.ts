@@ -53,7 +53,7 @@ export class Line extends Shape {
         }
     }
 
-    protected getBoundingBox(): { x: number; y: number; points: number[]; lineWidth: number | undefined; shape: string, radial: Radial } {
+    public getBoundingBox(): { x: number; y: number; points: number[]; lineWidth: number | undefined; shape: string, radial: Radial } {
         const { x, y, points, lineWidth } = this.config;
         return { x, y, points, lineWidth, shape: this.shape, radial: this.radial };
     }

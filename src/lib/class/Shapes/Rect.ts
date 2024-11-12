@@ -45,7 +45,7 @@ export class Rect extends Shape {
         }
     }
 
-    protected getBoundingBox(): { x: number; y: number; width: number; height: number; shape: string, radial: Radial } {
+    public getBoundingBox(): { x: number; y: number; width: number; height: number; shape: string, radial: Radial } {
         const { x, y, width, height } = this.config;
         return { x, y, width, height, shape: this.shape, radial: this.radial };
     }

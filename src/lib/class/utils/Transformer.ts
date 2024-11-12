@@ -124,7 +124,7 @@ export class Transformer {
       radius: size / 2,
       color,
       borderColor,
-      borderWidth
+      borderWidth,
     });
   }
 
@@ -140,7 +140,7 @@ export class Transformer {
       color: 'transparent',
       borderColor,
       borderWidth,
-      draggable: true
+      draggable: true,
     });
 
     this.border.setAttr("ignore", true);
