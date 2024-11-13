@@ -1,14 +1,13 @@
 import type { Radial } from '../../Radial';
-import { Shape } from './Shape';
-import type { BaseConfig } from '../../types/types';
+import { Shape, type ExtendedBaseConfig } from './Shape';
 
-export interface ConfigTriangle extends BaseConfig {
+export interface ConfigTriangle extends ExtendedBaseConfig {
     radius: number;
 }
 
 export class Triangle extends Shape {
+    public config: ConfigTriangle;
     private radial: Radial;
-    protected config: ConfigTriangle;
     private shape: string = "Triangle";
     private isInitialized: boolean = false;
 

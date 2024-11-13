@@ -1,6 +1,6 @@
 import type { Radial } from "../../Radial";
-import type { BaseConfig, CollisionState, ShapeBoundingBox } from "../../types/types";
-import { calculateArea, calculateShadowPadding, calculateTriangleVertices } from "../../utils/lib";
+import { DEFAULT_SHAPE_CONFIG, type BaseConfig, type CollisionState, type GradientConfig, type ShapeBoundingBox } from "../../types/types";
+import { calculateArea, calculateShadowPadding, calculateTriangleVertices, mergeWithDefaults } from "../../utils/lib";
 import { Events } from "../utils/Events";
 
 // Types and Interfaces remain the same
@@ -10,6 +10,21 @@ interface BoundingRect {
     width?: number;
     height?: number;
     radius?: number;
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+}
+
+export interface ExtendedBaseConfig extends BaseConfig {
+    visible?: boolean;
+    opacity?: number;
+    rotation?: number;
+    scale?: { x: number; y: number };
+    draggable?: boolean;
+    gradient?: GradientConfig;
+    borderOpacity?: number;
+    isRadius?: boolean;
 }
 
 export interface IShapeEventDelegate {
@@ -31,8 +46,9 @@ export interface ConfigShapeGlobal extends BaseConfig {
 }
 
 export class Shape implements IShapeEventDelegate {
+    public config: Required<ExtendedBaseConfig>;
+    private auxConfig: Required<ExtendedBaseConfig>;
     protected ctx: CanvasRenderingContext2D;
-    protected config: BaseConfig;
     protected dirtyFlag: boolean = true;
     private rafId: number | null = null;
     private eventManager: Events;
@@ -42,18 +58,49 @@ export class Shape implements IShapeEventDelegate {
         currentCollisions: []
     };
 
-    constructor(ctx: CanvasRenderingContext2D, config: BaseConfig) {
+    constructor(ctx: CanvasRenderingContext2D, userConfig: ExtendedBaseConfig) {
         this.ctx = ctx;
-        this.config = {
-            ...config,
-            draggable: config.draggable ?? false,
-            collision: config.collision ?? false,
-            closest: config.closest ?? false,
-            closestDistance: config.closestDistance ?? 100,
-            trail: config.trail ?? false,
-            trailAlpha: config.trailAlpha ?? 0.1
-        };
+        const configWithDefaults = mergeWithDefaults(userConfig, DEFAULT_SHAPE_CONFIG);
+        this.config = configWithDefaults as Required<ExtendedBaseConfig>;
+        this.auxConfig = { ...this.config };
         this.eventManager = new Events(this, ctx);
+    }
+
+    private createGradient(): CanvasGradient | null {
+        const { gradient } = this.config;
+        if (!gradient || !gradient.from || !gradient.to) return null;
+
+        const angle = (gradient.deg || 0) * Math.PI / 180;
+        const boundingBox = this.getBoundingRect();
+        
+        // Calculate the center point of the shape
+        const centerX = boundingBox.x + (boundingBox.width || 0) / 2;
+        const centerY = boundingBox.y + (boundingBox.height || 0) / 2;
+
+        // Calculate the diagonal length of the shape
+        const diagonal = Math.sqrt(
+            Math.pow(boundingBox.width || 0, 2) + 
+            Math.pow(boundingBox.height || 0, 2)
+        );
+        const radius = diagonal / 2;
+
+        // Calculate start and end points based on angle
+        const startX = centerX - Math.cos(angle) * radius;
+        const startY = centerY - Math.sin(angle) * radius;
+        const endX = centerX + Math.cos(angle) * radius;
+        const endY = centerY + Math.sin(angle) * radius;
+
+        const gradientObj = this.ctx.createLinearGradient(
+            startX,
+            startY,
+            endX,
+            endY
+        );
+
+        gradientObj.addColorStop(0, gradient.from);
+        gradientObj.addColorStop(1, gradient.to);
+
+        return gradientObj;
     }
 
     public on(event: string, handler: Function) {
@@ -67,6 +114,7 @@ export class Shape implements IShapeEventDelegate {
     protected emit(event: string, ...args: any[]) {
         this.eventManager.emit(event, ...args);
     }
+
     public getEventDelegate(): IShapeEventDelegate {
         return this;
     }
@@ -112,12 +160,23 @@ export class Shape implements IShapeEventDelegate {
         this.dirtyFlag = value;
     }
 
-    public setAttr(attr: string, value: any): void {
-        if ((this.config as any)[attr] !== value) {
-            (this.config as any)[attr] = value;
+    protected getConfigValue<K extends keyof ExtendedBaseConfig>(
+        key: K
+    ): NonNullable<ExtendedBaseConfig[K]> {
+        return (this.config[key] ?? (DEFAULT_SHAPE_CONFIG as any)[key]) as NonNullable<ExtendedBaseConfig[K]>;
+    }
+
+    public setAttr<K extends keyof ExtendedBaseConfig>(attr: K, value: ExtendedBaseConfig[K]): void {
+        const currentValue = this.getConfigValue(attr);
+        if (currentValue !== value) {
+            this.config[attr] = value as Required<ExtendedBaseConfig>[K];
             this.dirtyFlag = true;
             this.requestRedraw();
         }
+    }
+
+    public getAttr<K extends keyof ExtendedBaseConfig>(attr: K): NonNullable<ExtendedBaseConfig[K]> {
+        return this.getConfigValue(attr);
     }
 
     public setAttrs(attrs: { [key: string]: any }): void {
@@ -134,10 +193,6 @@ export class Shape implements IShapeEventDelegate {
         }
     }
 
-    public getAttr(attr: any): any {
-        return (this.config as any)[attr];
-    }
-
     public getAttrs(): { [key: string]: any } {
         return {...this.config };
     }
@@ -151,87 +206,52 @@ export class Shape implements IShapeEventDelegate {
     }
 
     public getBoundingRect(): BoundingRect {
-        const box = this.getBoundingBox();
-        let minX = Infinity, minY = Infinity;
-        let maxX = -Infinity, maxY = -Infinity;
+        const baseRect: BoundingRect = {
+            x: this.config.x,
+            y: this.config.y,
+            width: this.config.width,
+            height: this.config.height,
+            radius: this.config.radius,
+            left: this.config.x,
+            right: this.config.x + (this.config.width || 0),
+            top: this.config.y,
+            bottom: this.config.y + (this.config.height || 0),
+        };
 
-        switch (box.shape) {
-            case "Rect": {
-                const { x, y, width = 0, height = 0 } = box;
-                const borderWidth = this.config.borderWidth || 0;
-                const halfBorder = borderWidth / 2;
-                const shadowPadding = calculateShadowPadding(this.config.shadowOffset!, this.config.shadowBlur);
-
-                return {
-                    x: x - halfBorder - shadowPadding.left,
-                    y: y - halfBorder - shadowPadding.top,
-                    width: width + borderWidth + shadowPadding.width,
-                    height: height + borderWidth + shadowPadding.height
-                };
-            }
-            case "Circle": {
-                const { x, y, radius = 0 } = box;
-                const borderWidth = this.config.borderWidth || 0;
-                const totalRadius = radius + borderWidth / 2;
-                const shadowPadding = calculateShadowPadding(this.config.shadowOffset!, this.config.shadowBlur);
-
-                return {
-                    x: x,
-                    y: y,
-                    width: totalRadius * 2 + shadowPadding.width,
-                    height: totalRadius * 2 + shadowPadding.height,
-                    radius: radius
-                };
-            }
-            case "Triangle": {
-                const { x, y, radius = 0 } = box;
-                const borderWidth = this.config.borderWidth || 0;
-                const vertices = calculateTriangleVertices(x, y, radius);
-                
-                vertices.forEach(([vx, vy]) => {
-                    minX = Math.min(minX, vx);
-                    minY = Math.min(minY, vy);
-                    maxX = Math.max(maxX, vx);
-                    maxY = Math.max(maxY, vy);
-                });
-
-                const shadowPadding = calculateShadowPadding(this.config.shadowOffset!, this.config.shadowBlur);
-                const width = maxX - minX + borderWidth + shadowPadding.width;
-                const height = maxY - minY + borderWidth + shadowPadding.height;
-
-                return {
-                    x: minX - borderWidth / 2 - shadowPadding.left,
-                    y: minY - borderWidth / 2 - shadowPadding.top,
-                    width,
-                    height,
-                    radius
-                };
-            }
-            case "Line": {
-                const { points = [], lineWidth = 1 } = box;
-                const halfLineWidth = lineWidth / 2;
-
-                for (let i = 0; i < points.length; i += 2) {
-                    const px = points[i];
-                    const py = points[i + 1];
-                    minX = Math.min(minX, px);
-                    minY = Math.min(minY, py);
-                    maxX = Math.max(maxX, px);
-                    maxY = Math.max(maxY, py);
-                }
-
-                const shadowPadding = calculateShadowPadding(this.config.shadowOffset!, this.config.shadowBlur);
-
-                return {
-                    x: minX - halfLineWidth - shadowPadding.left,
-                    y: minY - halfLineWidth - shadowPadding.top,
-                    width: maxX - minX + lineWidth + shadowPadding.width,
-                    height: maxY - minY + lineWidth + shadowPadding.height
-                };
-            }
-            default:
-                return { x: 0, y: 0, width: 0, height: 0 };
+        const { rotation = 0, scale = {x: 1, y: 1} } = this.config;
+        
+        const finalScaleX = scale.x;
+        const finalScaleY = scale.y;
+        
+        if (rotation === 0 && finalScaleX === 1 && finalScaleY === 1) {
+            return baseRect;
         }
+        
+        // Calculate scaled dimensions
+        const scaledWidth = baseRect.width! * finalScaleX;
+        const scaledHeight = baseRect.height! * finalScaleY;
+        
+        if (rotation === 0) {
+            return {
+                ...baseRect,
+                width: scaledWidth,
+                height: scaledHeight
+            };
+        }
+        
+        // Calculate rotated bounding box
+        const rad = rotation * Math.PI / 180;
+        const cos = Math.abs(Math.cos(rad));
+        const sin = Math.abs(Math.sin(rad));
+        
+        const rotatedWidth = scaledWidth * cos + scaledHeight * sin;
+        const rotatedHeight = scaledWidth * sin + scaledHeight * cos;
+        
+        return {
+            ...baseRect,
+            width: rotatedWidth,
+            height: rotatedHeight
+        };
     }
 
     public isPointInShape(x: number, y: number, rect: ShapeBoundingBox): boolean {
@@ -354,15 +374,23 @@ export class Shape implements IShapeEventDelegate {
         }
     }
 
-    private applyStyles() {
-        const { color, borderWidth, borderColor, shadowColor, shadowBlur, shadowOffset } = this.config;
+    protected applyStyles() {
+        const visible = this.getConfigValue('visible');
+        if (!visible) return;
+
+        const opacity = this.getConfigValue('opacity');
+        const borderWidth = this.getConfigValue('borderWidth');
+        const borderColor = this.getConfigValue('borderColor');
+        const borderOpacity = this.getConfigValue('borderOpacity');
+        const shadowColor = this.getConfigValue('shadowColor');
+        const shadowBlur = this.getConfigValue('shadowBlur');
+        const shadowOffset = this.getConfigValue('shadowOffset');
+        const color = this.getConfigValue('color');
+
         this.ctx.save();
+        this.ctx.globalAlpha = opacity;
 
-        this.ctx.shadowColor = 'rgba(0, 0, 0, 0)';
-        this.ctx.shadowBlur = 0;
-        this.ctx.shadowOffsetX = 0;
-        this.ctx.shadowOffsetY = 0;
-
+        // Apply shadow if defined
         if (shadowColor) {
             this.ctx.shadowColor = shadowColor;
             if (shadowBlur !== undefined) {
@@ -374,13 +402,64 @@ export class Shape implements IShapeEventDelegate {
             }
         }
 
+        // Apply border styles
         if (borderWidth && borderColor) {
             this.ctx.lineWidth = borderWidth;
-            this.ctx.strokeStyle = borderColor;
+            this.ctx.strokeStyle = this.convertColorToRgba(borderColor, borderOpacity);
         }
 
-        this.setAttr("colorBackup", color);
-        this.ctx.fillStyle = color;
+        // Apply fill style
+        const gradient = this.createGradient();
+        this.ctx.fillStyle = gradient || color;
+
+        // Apply transformations
+        this.applyTransform();
+    }
+
+    protected applyTransform() {
+        const { x, y } = this.config;
+        const rotation = this.getConfigValue('rotation');
+        const scale = this.getConfigValue('scale');
+        
+        this.ctx.translate(x, y);
+        
+        if (rotation) {
+            this.ctx.rotate(rotation * Math.PI / 180);
+        }
+        
+        const finalScaleX = scale.x;
+        const finalScaleY = scale.y;
+        if (finalScaleX !== 1 || finalScaleY !== 1) {
+            this.ctx.scale(finalScaleX, finalScaleY);
+        }
+        
+        this.ctx.translate(-x, -y);
+    }
+
+    private convertColorToRgba(color: string, opacity: number): string {
+        // Handle hexadecimal
+        if (color.startsWith('#')) {
+            const r = parseInt(color.slice(1, 3), 16);
+            const g = parseInt(color.slice(3, 5), 16);
+            const b = parseInt(color.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+        }
+        
+        // Handle rgb/rgba
+        if (color.startsWith('rgb')) {
+            if (color.startsWith('rgba')) {
+                return color.replace(/[\d.]+\)$/g, `${opacity})`);
+            }
+            return color.replace('rgb', 'rgba').replace(')', `, ${opacity})`);
+        }
+        
+        // For named colors, convert to rgb first then to rgba
+        const tempElement = document.createElement('div');
+        tempElement.style.color = color;
+        document.body.appendChild(tempElement);
+        const computedColor = getComputedStyle(tempElement).color;
+        document.body.removeChild(tempElement);
+        return computedColor.replace('rgb', 'rgba').replace(')', `, ${opacity})`);
     }
 
     protected draw(): void {
@@ -388,8 +467,8 @@ export class Shape implements IShapeEventDelegate {
     }
 
     protected render() {
-        if (!this.dirtyFlag) return;
-        
+        if (!this.dirtyFlag || !this.auxConfig.visible) return;
+
         this.applyStyles();
         this.draw();
         

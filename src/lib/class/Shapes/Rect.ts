@@ -1,20 +1,21 @@
 import type { Radial } from '../../Radial';
-import { Shape } from './Shape';
-import type { BaseConfig } from '../../types/types';
+import { Shape, type ExtendedBaseConfig } from './Shape';
 
-export interface ConfigRect extends BaseConfig {
+export interface ConfigRect extends ExtendedBaseConfig {
     width: number;
     height: number;
     borderRadius?: number;
+    isRadius?: boolean;
 }
 
 export class Rect extends Shape {
+    public config: ConfigRect;
     private radial: Radial;
-    protected config: ConfigRect;
     private shape: string = "Rect";
     private isInitialized: boolean = false;
 
     constructor(radial: Radial, config: ConfigRect) {
+        config.isRadius = false;
         super(radial.getCtx(), config);
         this.radial = radial;
         this.config = config;

@@ -4,6 +4,7 @@ import { Triangle, type ConfigTriangle } from "./class/Shapes/Triangle";
 import { Line, type ConfigLine } from "./class/Shapes/Line";
 import { Transformer, type ConfigTransformer } from "./class/utils/Transformer";
 import type { Shape } from "./class/Shapes/Shape";
+import { Particle, type ConfigParticle } from "./class/Shapes/Particle";
 
 interface CustomCanvasEvent extends MouseEvent {
     canvasTarget?: Shape;
@@ -186,6 +187,10 @@ export class Radial {
 
     Line(config: ConfigLine) {
         return new Line(this, config);
+    }
+
+    Particle(config: ConfigParticle) {
+        return new Particle(this, config);
     }
 
     Transformer(config: ConfigTransformer) {

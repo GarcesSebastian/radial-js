@@ -1,6 +1,6 @@
 {
   "name": "radial-canvas",               
-  "version": "1.0.0",                    
+  "version": "1.0.1",                    
   "description": "RadialCanvas.js is a lightweight, object-oriented canvas manipulation library for TypeScript/JavaScript. It provides an intuitive API for drawing shapes, handling events, and managing canvas interactions.",
   "main": "dist/index.js",               
   "types": "dist/index.d.ts",            
