@@ -1,6 +1,6 @@
 import type { Radial } from "../../Radial";
-import { checkCollision } from "../../utils/lib";
-import type { IShapeEventDelegate, Shape } from "../Shapes/Shape";
+import { checkCollision, isPointInShape } from "../../utils/lib";
+import { Shape, type IShapeEventDelegate } from "../Shapes/Shape";
 
 export class Events {
     private static readonly THROTTLE_DELAY = 16;
@@ -138,7 +138,7 @@ export class Events {
 
         const handleMouseMove = (event: MouseEvent) => {
             const rect = this.shapeDelegate.getBoundingBox();
-            const isCurrentlyOverShape = this.shapeDelegate.isPointInShape(event.offsetX, event.offsetY, rect);
+            const isCurrentlyOverShape = isPointInShape(event.offsetX, event.offsetY, rect);
 
             if (isCurrentlyOverShape && !isOverShape) {
                 isOverShape = true;
@@ -160,7 +160,7 @@ export class Events {
 
     private handleMouseDown(event: MouseEvent): void {
         const rect = this.shapeDelegate.getBoundingBox();
-        if (this.shapeDelegate.isPointInShape(event.offsetX, event.offsetY, rect)) {
+        if (isPointInShape(event.offsetX, event.offsetY, rect)) {
             if (this.shapeDelegate.isDraggable()) {
                 this.startDragging(event);
             }
@@ -182,7 +182,7 @@ export class Events {
         if (this.isDragging) {
             this.endDragging(event);
         }
-        if (this.shapeDelegate.isPointInShape(event.offsetX, event.offsetY, this.shapeDelegate.getBoundingBox())) {
+        if (isPointInShape(event.offsetX, event.offsetY, this.shapeDelegate.getBoundingBox())) {
             this.emit("mouseup", event);
         }
     }
@@ -195,7 +195,7 @@ export class Events {
 
     private handleClick(event: MouseEvent): void {
         const rect = this.shapeDelegate.getBoundingBox();
-        if (this.shapeDelegate.isPointInShape(event.offsetX, event.offsetY, rect)) {
+        if (isPointInShape(event.offsetX, event.offsetY, rect)) {
             this.emit("click", { children: rect.radial.getChildren(), event });
         }
     }

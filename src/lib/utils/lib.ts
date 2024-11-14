@@ -42,7 +42,6 @@ export function checkCollision(shape1: Shape, shape2: Shape, box1: ShapeBounding
     const dim1 = getDimensions(shape1, box1);
     const dim2 = getDimensions(shape2, box2);
 
-    // Both shapes are circular (using radius)
     if (dim1.isRadius && dim2.isRadius) {
         const dx = dim1.x - dim2.x;
         const dy = dim1.y - dim2.y;
@@ -51,11 +50,9 @@ export function checkCollision(shape1: Shape, shape2: Shape, box1: ShapeBounding
         return distance <= minDistance;
     }
 
-    // One shape is circular and the other is rectangular
     if ((dim1.isRadius && !dim2.isRadius) || (!dim1.isRadius && dim2.isRadius)) {
         const [circle, rect] = dim1.isRadius ? [dim1, dim2] : [dim2, dim1];
         
-        // Calculate rectangle bounds with border
         const rectWithBorder = {
             x: rect.x - rect.borderWidth,
             y: rect.y - rect.borderWidth,
@@ -63,23 +60,18 @@ export function checkCollision(shape1: Shape, shape2: Shape, box1: ShapeBounding
             height: rect.height!
         };
 
-        // Find closest point on rectangle to circle center
         const closestX = Math.max(rectWithBorder.x, 
                           Math.min(circle.x, rectWithBorder.x + rectWithBorder.width));
         const closestY = Math.max(rectWithBorder.y, 
                           Math.min(circle.y, rectWithBorder.y + rectWithBorder.height));
 
-        // Calculate distance from closest point to circle center
         const dx = circle.x - closestX;
         const dy = circle.y - closestY;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        // Check if distance is less than circle radius
         return distance <= circle.radius!;
     }
 
-    // Both shapes are rectangular
-    // Create rectangles with border adjustments
     const rect1 = {
         x: dim1.x - dim1.borderWidth,
         y: dim1.y - dim1.borderWidth,
@@ -131,4 +123,87 @@ export function calculateShadowPadding(shadowOffset: {x: number, y: number}, sha
 
 export function mergeWithDefaults<T extends object>(userConfig: T, defaults: object): T {
     return Object.assign({}, defaults, userConfig);
+}
+
+export function isPointInShape(x: number, y: number, rect: ShapeBoundingBox): boolean {
+    switch (rect.shape) {
+        case "Rect":
+            return x >= rect.x && x <= rect.x + rect.width! &&
+                   y >= rect.y && y <= rect.y + rect.height!;
+
+        case "Circle": {
+            const dx = x - rect.x;
+            const dy = y - rect.y;
+            return dx * dx + dy * dy <= rect.radius! * rect.radius!;
+        }
+
+        case "Triangle": {
+            const vertices = calculateTriangleVertices(rect.x, rect.y, rect.radius!);
+            const [[x1, y1], [x2, y2], [x3, y3]] = vertices;
+            const totalArea = calculateArea(x1, y1, x2, y2, x3, y3);
+            const area1 = calculateArea(x, y, x2, y2, x3, y3);
+            const area2 = calculateArea(x1, y1, x, y, x3, y3);
+            const area3 = calculateArea(x1, y1, x2, y2, x, y);
+            return Math.abs(totalArea - (area1 + area2 + area3)) < 0.1;
+        }
+
+        case "Line": {
+            const { points, lineWidth } = rect;
+            const halfLineWidth = (lineWidth || 1) / 2;
+            
+            for (let i = 0; i < points!.length - 2; i += 2) {
+                const x1 = points![i];
+                const y1 = points![i + 1];
+                const x2 = points![i + 2];
+                const y2 = points![i + 3];
+                const dx = x2 - x1;
+                const dy = y2 - y1;
+                const length = Math.sqrt(dx * dx + dy * dy);
+                
+                if (length === 0) continue;
+                
+                const t = ((x - x1) * dx + (y - y1) * dy) / (length * length);
+                
+                if (t >= 0 && t <= 1) {
+                    const closestX = x1 + t * dx;
+                    const closestY = y1 + t * dy;
+                    const distance = Math.sqrt(
+                        (x - closestX) * (x - closestX) + 
+                        (y - closestY) * (y - closestY)
+                    );
+                    
+                    if (distance <= halfLineWidth) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        default:
+            return false;
+    }
+}
+
+export function convertColorToRgba(color: string, opacity: number): string {
+    if (color.startsWith('#')) {
+        const r = parseInt(color.slice(1, 3), 16);
+        const g = parseInt(color.slice(3, 5), 16);
+        const b = parseInt(color.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+    }
+    
+    if (color.startsWith('rgb')) {
+        if (color.startsWith('rgba')) {
+            return color.replace(/[\d.]+\)$/g, `${opacity})`);
+        }
+        return color.replace('rgb', 'rgba').replace(')', `, ${opacity})`);
+    }
+    
+    const tempElement = document.createElement('div');
+    tempElement.style.color = color;
+    document.body.appendChild(tempElement);
+    const computedColor = getComputedStyle(tempElement).color;
+    document.body.removeChild(tempElement);
+    return computedColor.replace('rgb', 'rgba').replace(')', `, ${opacity})`);
 }

@@ -1,10 +1,12 @@
 import { Circle, type ConfigCircle } from "./class/Shapes/Circle";
 import { Rect, type ConfigRect } from "./class/Shapes/Rect";
-import { Triangle, type ConfigTriangle } from "./class/Shapes/Triangle";
+import { Polygon, type ConfigPolygon } from "./class/Shapes/Polygon";
 import { Line, type ConfigLine } from "./class/Shapes/Line";
 import { Transformer, type ConfigTransformer } from "./class/utils/Transformer";
 import type { Shape } from "./class/Shapes/Shape";
 import { Particle, type ConfigParticle } from "./class/Shapes/Particle";
+import { Layer, type LayerConfig } from "./class/utils/Layer";
+import { isPointInShape } from "./utils/lib";
 
 interface CustomCanvasEvent extends MouseEvent {
     canvasTarget?: Shape;
@@ -14,13 +16,14 @@ interface CustomCanvasEvent extends MouseEvent {
 }
 
 export class Radial {
-    public children: any[] = [];
+    private layers: Layer[] = [];
+    public children: Shape[] = [];
 
     private ctx!: CanvasRenderingContext2D;
     private events!: { [key: string]: Function[] };
     private isDragging: boolean = false;
     private dragStartPos: { x: number, y: number } | null = null;
-
+    
     constructor(ctx: CanvasRenderingContext2D) {
         if (!ctx) {
             console.error("No se proporcionó un contexto de canvas válido.");
@@ -91,7 +94,7 @@ export class Radial {
                 if(child.getAttr("ignore")) return;
 
                 const rect = child.getBoundingBox();
-                if (child.isPointInShape(event.offsetX, event.offsetY, rect)) {
+                if (isPointInShape(event.offsetX, event.offsetY, rect)) {
                     target = child;
                 }
             });
@@ -107,7 +110,7 @@ export class Radial {
                 if(child.getAttr("ignore")) return;
                 
                 const rect = child.getBoundingBox();
-                if (child.isPointInShape(event.offsetX, event.offsetY, rect)) {
+                if (isPointInShape(event.offsetX, event.offsetY, rect)) {
                     target = child;
                 }
             });
@@ -123,12 +126,15 @@ export class Radial {
         this.ctx.canvas.addEventListener("mousedown", (event) => {
             this.isDragging = true;
             this.dragStartPos = { x: event.offsetX, y: event.offsetY };
-            this.emit("dragstart", event);
+
+            const customEvent = this.createCustomEvent(event);
+            this.emit("dragstart", customEvent);
         });
 
         this.ctx.canvas.addEventListener("mouseup", (event) => {
             if (this.isDragging) {
-                this.emit("dragend", event);
+                const customEvent = this.createCustomEvent(event);
+                this.emit("dragend", customEvent);
                 this.isDragging = false;
                 this.dragStartPos = null;
             }
@@ -181,8 +187,8 @@ export class Radial {
         return new Rect(this, config);
     }
 
-    Triangle(config: ConfigTriangle) {
-        return new Triangle(this, config);
+    Polygon(config: ConfigPolygon) {
+        return new Polygon(this, config);
     }
 
     Line(config: ConfigLine) {
