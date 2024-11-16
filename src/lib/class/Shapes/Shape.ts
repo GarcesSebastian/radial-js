@@ -24,6 +24,8 @@ export interface ExtendedBaseConfig extends BaseConfig {
     gradient?: GradientConfig;
     borderOpacity?: number;
     isRadius?: boolean;
+    origin?: { x: number; y: number };
+    image?: HTMLImageElement;
 }
 
 export interface IShapeEventDelegate {
@@ -79,9 +81,7 @@ export class Shape implements IShapeEventDelegate {
         };
     }
 
-    protected getConfigValue<K extends keyof ExtendedBaseConfig>(
-        key: K
-    ): NonNullable<ExtendedBaseConfig[K]> {
+    protected getConfigValue<K extends keyof ExtendedBaseConfig>(key: K): NonNullable<ExtendedBaseConfig[K]> {
         return (this.config[key] ?? (DEFAULT_SHAPE_CONFIG as any)[key]) as NonNullable<ExtendedBaseConfig[K]>;
     }
 
@@ -94,7 +94,7 @@ export class Shape implements IShapeEventDelegate {
     }
 
     public getAttrs(): { [key: string]: any } {
-        return {...this.config };
+        return { ...this.config };
     }
 
     public getAttr<K extends keyof ExtendedBaseConfig>(attr: K): NonNullable<ExtendedBaseConfig[K]> {
@@ -162,6 +162,43 @@ export class Shape implements IShapeEventDelegate {
         this.eventManager.off(event, handler);
     }
 
+    public translateTo(translation: { x: number; y: number; duration?: number; translateStyle?: 'linear' | 'ease' | 'ease-in' | 'ease-out' | 'ease-in-out' }): void {
+        if (this.animationFrameTranslateTo) {
+            cancelAnimationFrame(this.animationFrameTranslateTo);
+        }
+
+        const { x, y } = this.config;
+        const { x: targetX, y: targetY, duration = 500, translateStyle = 'linear' } = translation;
+        const startTime = performance.now();
+
+        const easingFunctions = {
+            linear: (t: number) => t,
+            ease: (t: number) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t,
+            'ease-in': (t: number) => t * t,
+            'ease-out': (t: number) => t * (2 - t),
+            'ease-in-out': (t: number) => t < 0.5 ? 2 * t * t : -2 * t * t + 4 * t - 1
+        };
+
+        const animate = (currentTime: number) => {
+            const elapsedTime = currentTime - startTime;
+            const progress = Math.min(elapsedTime / duration, 1);
+            const easedProgress = easingFunctions[translateStyle](progress);
+
+            this.config.x = x + (targetX - x) * easedProgress;
+            this.config.y = y + (targetY - y) * easedProgress;
+            this.dirtyFlag = true;
+            this.requestRedraw();
+
+            if (elapsedTime < duration) {
+                this.animationFrameTranslateTo = requestAnimationFrame(animate);
+            } else {
+                this.animationFrameTranslateTo = null;
+            }
+        };
+
+        requestAnimationFrame(animate);
+    }
+
     public getBoundingBox(): ShapeBoundingBox {
         throw new Error("Method 'getBoundingBox()' must be implemented.");
     }
@@ -179,17 +216,17 @@ export class Shape implements IShapeEventDelegate {
             bottom: this.config.y + (this.config.height || 0),
         };
 
-        const { rotation = 0, scale = {x: 1, y: 1} } = this.config;
+        const { rotation = 0, scale = { x: 1, y: 1 } } = this.config;
         const finalScaleX = scale.x;
         const finalScaleY = scale.y;
-        
+
         if (rotation === 0 && finalScaleX === 1 && finalScaleY === 1) {
             return baseRect;
         }
-        
+
         const scaledWidth = baseRect.width! * finalScaleX;
         const scaledHeight = baseRect.height! * finalScaleY;
-        
+
         if (rotation === 0) {
             return {
                 ...baseRect,
@@ -197,14 +234,14 @@ export class Shape implements IShapeEventDelegate {
                 height: scaledHeight
             };
         }
-        
+
         const rad = rotation * Math.PI / 180;
         const cos = Math.abs(Math.cos(rad));
         const sin = Math.abs(Math.sin(rad));
-        
+
         const rotatedWidth = scaledWidth * cos + scaledHeight * sin;
         const rotatedHeight = scaledWidth * sin + scaledHeight * cos;
-        
+
         return {
             ...baseRect,
             width: rotatedWidth,
@@ -286,23 +323,31 @@ export class Shape implements IShapeEventDelegate {
     }
 
     protected applyTransform() {
-        const { x, y } = this.config;
+        const { x, y, origin } = this.config;
         const rotation = this.getConfigValue('rotation');
         const scale = this.getConfigValue('scale');
-        
-        this.ctx.translate(x, y);
-        
+
+        let translateX = x;
+        let translateY = y;
+
+        if (origin) {
+            translateX += origin.x;
+            translateY += origin.y;
+        }
+
+        this.ctx.translate(translateX, translateY);
+
         if (rotation) {
             this.ctx.rotate(rotation * Math.PI / 180);
         }
-        
+
         const finalScaleX = scale.x;
         const finalScaleY = scale.y;
         if (finalScaleX !== 1 || finalScaleY !== 1) {
             this.ctx.scale(finalScaleX, finalScaleY);
         }
-        
-        this.ctx.translate(-x, -y);
+
+        this.ctx.translate(-translateX, -translateY);
     }
 
     protected draw(): void {
@@ -314,11 +359,11 @@ export class Shape implements IShapeEventDelegate {
 
         this.applyStyles();
         this.draw();
-        
+
         if (this.config.borderWidth && this.config.borderColor) {
             this.ctx.stroke();
         }
-        
+
         this.ctx.restore();
         this.dirtyFlag = false;
     }
@@ -339,10 +384,10 @@ export class Shape implements IShapeEventDelegate {
         if (this.rafId !== null) {
             cancelAnimationFrame(this.rafId);
         }
-        
+
         const radial = this.getBoundingBox().radial;
         const index = radial.children.indexOf(this);
-        
+
         if (index !== -1) {
             radial.children.splice(index, 1);
             this.requestFullCanvasRedraw(radial);
@@ -353,17 +398,17 @@ export class Shape implements IShapeEventDelegate {
 
     public bounce(duration: number): void {
         const startTime = performance.now();
-    
+
         const animate = (currentTime: number) => {
             const elapsedTime = currentTime - startTime;
-    
+
             if (elapsedTime >= duration) {
                 this.destroy();
             } else {
                 requestAnimationFrame(animate);
             }
         };
-    
+
         requestAnimationFrame(animate);
     }
 }

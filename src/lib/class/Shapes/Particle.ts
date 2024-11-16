@@ -188,7 +188,7 @@ export class Particle extends Shape {
             }
 
             if (this.config.trail) {
-                const trailStep = Math.max(1, Math.floor(this.config.trailLength! / 5)); // Reduce trail resolution
+                const trailStep = Math.max(1, Math.floor(this.config.trailLength! / 5));
                 for (let i = 0; i < data.trail.length; i += trailStep) {
                     const point = data.trail[i];
                     const trailRadius = data.radius * (1 - i / this.config.trailLength!);

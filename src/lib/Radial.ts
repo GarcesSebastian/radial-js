@@ -7,6 +7,7 @@ import type { Shape } from "./class/Shapes/Shape";
 import { Particle, type ConfigParticle } from "./class/Shapes/Particle";
 import { Layer, type LayerConfig } from "./class/utils/Layer";
 import { isPointInShape } from "./utils/lib";
+import { Image, type ConfigImage } from "./class/Shapes/Image"; // Import the Image class
 
 interface CustomCanvasEvent extends MouseEvent {
     canvasTarget?: Shape;
@@ -201,5 +202,9 @@ export class Radial {
 
     Transformer(config: ConfigTransformer) {
         return new Transformer(this, config);
+    }
+
+    Image(config: ConfigImage) {
+        return new Image(this, config);
     }
 }
