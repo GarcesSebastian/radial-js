@@ -1,14 +1,9 @@
+import type { Point } from 'chart.js';
 import type { Radial } from '../../Radial';
-import type { Point } from '../../types/types';
 import type { Shape } from '../Shapes/Shape';
 
 type AnchorPosition = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
-
-interface Rect extends Point {
-  width: number;
-  height: number;
-  radius?: number;
-}
+type SidesPosition = 'Left' | 'Top' | 'Right' | 'Bottom';
 
 interface Padding {
   top?: number;
@@ -23,13 +18,10 @@ export interface ConfigTransformer {
   borderColor?: string;
   size?: number;
   anchorsEnabled?: AnchorPosition[];
+  sidesEnabled?: SidesPosition[];
   padding?: Padding;
 }
 
-/**
- * Transformer class for handling shape transformations on a canvas
- * Provides functionality for selecting, moving, and resizing shapes
- */
 export class Transformer {
   private readonly defaultConfig: Required<ConfigTransformer> = {
     color: 'white',
@@ -37,20 +29,22 @@ export class Transformer {
     borderColor: 'blue',
     size: 10,
     anchorsEnabled: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'],
+    sidesEnabled: ['Left', 'Top', 'Right', 'Bottom'],
     padding: { top: 5, right: 5, bottom: 5, left: 5 }
   };
 
   private nodes: Shape[] = [];
   private anchors: Shape[] = [];
+  private sides: Shape[] = [];
   private border: Shape | null = null;
-  
+
   private isDragging = false;
+  private dragStartPosition: Point = { x: 0, y: 0 };
+
   private isResizing = false;
-  private activeAnchor: Shape | null = null;
-  private dragStartPos: Point | null = null;
-  private resizeStartPos: Point | null = null;
-  private initialRect: Rect | null = null;
-  private initialScale: Point | null = null;
+  private resizeStartPosition: Point = { x: 0, y: 0 };
+  
+  private boundingBox: { x: number; y: number; width: number; height: number, startWidth: number, startHeight: number } = { x: 0, y: 0, width: 0, height: 0, startWidth: 0, startHeight: 0 };
 
   private readonly config: Required<ConfigTransformer>;
   private readonly ctx: CanvasRenderingContext2D;
@@ -63,356 +57,194 @@ export class Transformer {
     this.ctx = radial.getCtx();
   }
 
-  /**
-   * Creates anchor points for resizing the transformer
-   */
-  private createAnchors(): void {
-    const { size, color, borderColor, borderWidth, anchorsEnabled } = this.config;
-    const rect = this.border?.getBoundingRect() as Rect;
-    if (!rect || !anchorsEnabled.length) return;
-
-    const anchorPositions = this.calculateAnchorPositions(rect, size);
-
-    anchorsEnabled.forEach(position => {
-      const anchor = this.createAnchorShape(
-        anchorPositions[position],
-        size,
-        color,
-        borderColor,
-        borderWidth
-      );
-      anchor.setAttr('shape', position);
-      anchor.setAttr('draggable', true);
-      anchor.setAttr("ignore", true);
-
-      anchor.on('dragstart', (e: any) => this.resizeStart(e.event, anchor));
-      anchor.on('drag', (e: any) => this.resize(e.event));
-      anchor.on('dragend', (e: any) => this.resizeEnd(e.event));
-
-      this.anchors.push(anchor);
-    });
+  private initTransformer(): void {
+    this.updateBoundingBox();
+    
+    this.nodes.forEach(node => node.setAttr("draggable", false))
   }
 
-  /**
-   * Calculates positions for all anchor points
-   */
-  private calculateAnchorPositions(rect: Rect, size: number): Record<AnchorPosition, Point> {
-    const sizeMedian = size / 2;
-    const { x, y, width = 0, height = 0 } = rect;
+  private updateBoundingBox(): void{
+    if (this.nodes.length === 0) {
+        this.boundingBox = { x: 0, y: 0, width: 0, height: 0, startWidth: 0, startHeight: 0 };
+        return;
+    }
 
-    return {
-      topLeft: { x: x + sizeMedian, y: y + sizeMedian },
-      topRight: { x: x + width + sizeMedian, y: y + sizeMedian },
-      bottomLeft: { x: x + sizeMedian, y: y + height + sizeMedian },
-      bottomRight: { x: x + width + sizeMedian, y: y + height + sizeMedian }
-    };
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    this.nodes.forEach(node => {
+      const box = node.getBoundingBox();
+      const isRadius = node.getAttr("isRadius") || false;
+
+      const width = isRadius ? box.radius! * 2 : box.width!;
+      const height = isRadius ? box.radius! * 2 : box.height!;
+
+      const umbralX = isRadius ? - width / 2 : 0;
+      const umbralY = isRadius ? - height / 2 : 0;
+
+      minX = Math.min(minX, box.x! + umbralX);
+      minY = Math.min(minY, box.y! + umbralY);
+      maxX = Math.max(maxX, box.x! + width + umbralX);
+      maxY = Math.max(maxY, box.y! + height + umbralY);
+    })
+
+    this.boundingBox = {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+      startWidth: maxX - minX,
+      startHeight: maxY - minY
+    }
   }
 
-  /**
-   * Creates a single anchor shape
-   */
-  private createAnchorShape(
-    position: Point,
-    size: number,
-    color: string,
-    borderColor: string,
-    borderWidth: number
-  ): Shape {
-    return this.radial.Circle({
-      x: position.x - size / 2,
-      y: position.y - size / 2,
-      radius: size / 2,
-      color,
-      borderColor,
-      borderWidth,
-    });
-  }
+  private createBorder(): void {
+    this.resetTransform();
 
-  /**
-   * Creates the border around selected shapes
-   */
-  private createBorder(rect: Rect): void {
-    const { padding, borderWidth, borderColor } = this.config;
-    const borderRect = this.calculateBorderRect(rect, padding);
+    if(this.border) {
+      this.border.destroy();
+      this.border = null;
+    }
+
+    const { x, y, width, height } = this.boundingBox;
+    const { borderWidth, borderColor } = this.config;
 
     this.border = this.radial.Rect({
-      ...borderRect,
-      color: 'transparent',
-      borderColor,
-      borderWidth,
+      x: x - borderWidth,
+      y: y - borderWidth,
+      width: width + 2 * borderWidth,
+      height: height + 2 * borderWidth,
+      color: "rgba(255,255,255,0.2)",
+      borderColor: borderColor,
+      borderWidth: borderWidth,
       draggable: true,
-    });
+      ignore: true
+    }) as Shape;
 
-    this.border.setAttr("ignore", true);
-    this.attachBorderEventHandlers();
+    // this.border.on("dragstart", (event: MouseEvent) => this.dragStart(event));
+    // this.border.on("drag", (event: MouseEvent) => this.drag(event));
+    // this.border.on("dragend", (event: MouseEvent) => this.dragEnd(event));
   }
 
-  /**
-   * Calculates the border rectangle dimensions
-   */
-  private calculateBorderRect(rect: Rect, padding: Padding): Rect {
-    const { left = 0, right = 0, top = 0, bottom = 0 } = padding;
-
-    if (rect.radius) {
-      return {
-        x: rect.x - rect.radius - left,
-        y: rect.y - rect.radius - top,
-        width: rect.radius * 2 + left + right,
-        height: rect.radius * 2 + top + bottom
-      };
-    }
-
-    return {
-      x: rect.x - left,
-      y: rect.y - top,
-      width: rect.width + left + right,
-      height: rect.height + top + bottom
-    };
-  }
-
-  /**
-   * Attaches event handlers to the border
-   */
-  private attachBorderEventHandlers(): void {
-    if (!this.border) return;
-
-    this.border.on('dragstart', (e: any) => this.dragStart(e.event));
-    this.border.on('drag', (e: any) => this.drag(e.event));
-    this.border.on('dragend', (e: any) => this.dragEnd(e.event));
-  }
-
-  /**
-   * Updates positions of all elements during transformation
-   */
-  private updatePosTransform(newPos: Point): void {
-    if (!this.border) return;
-
-    const {width, height} = this.border.getBoundingRect() as Rect;
-
-    this.border.setAttrs({
-      x: newPos.x - width / 2,
-      y: newPos.y - height / 2
-    });
-
-    this.updateNodesPosition(newPos);
-    this.updateAnchorsPosition();
-  }
-
-  /**
-   * Updates the position of all selected nodes
-   */
-  private updateNodesPosition(newPos: Point): void {
-    this.nodes.forEach(node => {
-        const rect = node.getBoundingRect() as Rect;
-        const { width, height, radius } = rect;
-
-        let newX = newPos.x
-        let newY = newPos.y
-
-        if (!radius) {
-            newX -= width / 2;
-            newY -= height / 2;
-        }
-
-        node.setAttrs({
-            x: newX,
-            y: newY
-        });
-    });
-  }
-
-  /**
-   * Updates the position of all anchor points
-   */
-  private updateAnchorsPosition(): void {
-    const { size, anchorsEnabled } = this.config;
-    const rect = this.border?.getBoundingRect() as Rect;
-    if (!rect || !anchorsEnabled.length) return;
-
-    const anchorPositions = this.calculateAnchorPositions(rect, size);
-
-    this.anchors.forEach(anchor => {
-      const position = anchor.getAttr('shape') as AnchorPosition;
-      if (anchorsEnabled.includes(position)) {
-        anchor.setAttrs({
-          x: anchorPositions[position].x - size / 2,
-          y: anchorPositions[position].y - size / 2
-        });
+  private createSides(side?: string): void {
+    const { x, y, width, height } = this.boundingBox;
+    const size = 10 + this.config.borderWidth
+    let positionSides = {
+      "Left": {
+        x: x - size / 2,
+        y: y,
+        width: size,
+        height: height
+      },
+      "Top": {
+        x: x,
+        y: y - size / 2,
+        width: width,
+        height: size
+      },
+      "Right": {
+        x: x + width - size / 2,
+        y: y,
+        width: size,
+        height: height
+      },
+      "Bottom": {
+        x: x,
+        y: y + height - size / 2,
+        width: width,
+        height: size
       }
-    });
-  }
-
-  /**
-   * Calculates the bounding rectangle for multiple nodes
-   */
-  private getBorderOfNodes(nodes: Shape[]): Rect {
-    if (nodes.length === 0) {
-      return { x: 0, y: 0, width: 0, height: 0 };
     }
 
-    const bounds = nodes.reduce((acc, node) => {
-      const rect = node.getBoundingRect() as Rect;
-      const [left, right, top, bottom] = this.getNodeBounds(rect);
-
-      return {
-        minX: Math.min(acc.minX, left),
-        maxX: Math.max(acc.maxX, right),
-        minY: Math.min(acc.minY, top),
-        maxY: Math.max(acc.maxY, bottom)
-      };
-    }, { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
-
-    return {
-      x: bounds.minX,
-      y: bounds.minY,
-      width: bounds.maxX - bounds.minX,
-      height: bounds.maxY - bounds.minY
-    };
-  }
-
-  /**
-   * Calculates the bounds for a single node
-   */
-  private getNodeBounds(rect: Rect): [number, number, number, number] {
-    if (rect.radius) {
-      return [
-        rect.x - rect.radius,
-        rect.x + rect.radius,
-        rect.y - rect.radius,
-        rect.y + rect.radius
-      ];
+    if (side){
+      positionSides = {
+        [side]: positionSides[side]
+      }
     }
 
-    return [
-      rect.x,
-      rect.x + rect.width,
-      rect.y,
-      rect.y + rect.height
-    ];
+    Object.keys(positionSides).forEach((side: string) => {
+      const { x: xSide, y: ySide, width: widthSide, height: heightSide } = positionSides[side];
+
+      const sideShape = this.radial.Rect({
+        x: xSide,
+        y: ySide,
+        width: widthSide,
+        height: heightSide,
+        color: "rgba(255,0,0,0.3)",
+        draggable: true,
+        ignore: true
+      })
+
+      sideShape.setAttr("side" as any, side)
+
+      sideShape.on("dragstart", (event: MouseEvent) => this.resizeStart(event));
+      sideShape.on("drag", (event: MouseEvent) => this.resize(event, side));
+      sideShape.on("dragend", (event: MouseEvent) => this.resizeEnd(event));
+
+      this.sides.push(sideShape as Shape);
+    })
   }
 
-  // Event handlers
   private dragStart(event: MouseEvent): void {
+    this.dragStartPosition = { x: event.x, y: event.y };
+    this.boundingBox.startWidth = this.boundingBox.width;
     this.isDragging = true;
-    this.dragStartPos = this.radial.getPointerPosition(event);
+    this.isResizing = false;
   }
 
   private drag(event: MouseEvent): void {
-    if (!this.isDragging) return;
-    const pos = this.radial.getPointerPosition(event);
-    this.updatePosTransform(pos);
+    if (this.isResizing || !this.isDragging) return;
+
+    const dx = event.x - this.dragStartPosition.x;
+    const dy = event.y - this.dragStartPosition.y;
+
+    this.nodes.forEach(node => {
+      const { x, y } = node.getBoundingBox();
+      node.updatePosition({ x: x + dx, y: y + dy });
+    });
   }
 
   private dragEnd(event: MouseEvent): void {
     this.isDragging = false;
-    this.dragStartPos = null;
+    this.updateBoundingBox();
+    this.createBorder();
   }
 
-  private resizeStart(event: MouseEvent, anchor: Shape): void {
-    if (!this.border) return;
-    
+  private resizeStart(event: MouseEvent): void {
+    this.resizeStartPosition = { x: event.x, y: event.y };
+    this.isDragging = false
     this.isResizing = true;
-    this.activeAnchor = anchor;
-    this.resizeStartPos = this.radial.getPointerPosition(event);
-    this.initialRect = this.border.getBoundingRect() as Rect;
-    this.initialScale = { x: 1, y: 1 };
   }
 
-  private resize(event: MouseEvent): void {
-    if (!this.isResizing || !this.resizeStartPos || !this.initialRect || !this.activeAnchor || !this.border) return;
+  private resize(event: MouseEvent, side: string): void {
+    if(this.isDragging || !this.isResizing) return;
 
-    const currentPos = this.radial.getPointerPosition(event);
-    const anchorPosition = this.activeAnchor.getAttr('shape') as AnchorPosition;
-    
-    // Calculate the new dimensions based on anchor position and mouse movement
-    const newDimensions = this.calculateResizeDimensions(
-      currentPos,
-      this.resizeStartPos,
-      this.initialRect,
-      anchorPosition
-    );
-
-    // Update border dimensions
-    this.border.setAttrs(newDimensions);
-
-    // Update nodes
-    this.resizeNodes(newDimensions, this.initialRect);
-
-    // Update anchor positions
-    this.updateAnchorsPosition();
-  }
-
-  private calculateResizeDimensions(
-    currentPos: Point,
-    startPos: Point,
-    initialRect: Rect,
-    anchorPosition: AnchorPosition
-  ): Rect {
-    const deltaX = currentPos.x - startPos.x;
-    const deltaY = currentPos.y - startPos.y;
-    
-    let newWidth = initialRect.width;
-    let newHeight = initialRect.height;
-    let newX = initialRect.x;
-    let newY = initialRect.y;
-
-    // Handle width changes
-    if (anchorPosition.includes('Right')) {
-      newWidth = Math.max(initialRect.width + deltaX, this.config.size);
-    } else if (anchorPosition.includes('Left')) {
-      const widthChange = -deltaX;
-      newWidth = Math.max(initialRect.width + widthChange, this.config.size);
-      newX = initialRect.x - widthChange;
+    if(side === "Right"){
+      const { x, width, startWidth } = this.boundingBox;
+      const dx = event.x - this.resizeStartPosition.x;
+      const newWidth = startWidth + dx;
+      this.boundingBox.width = newWidth;
+      this.createBorder();
     }
-
-    // Handle height changes
-    if (anchorPosition.includes('bottom')) {
-      newHeight = Math.max(initialRect.height + deltaY, this.config.size);
-    } else if (anchorPosition.includes('top')) {
-      const heightChange = -deltaY;
-      newHeight = Math.max(initialRect.height + heightChange, this.config.size);
-      newY = initialRect.y - heightChange;
-    }
-
-    return {
-      x: newX,
-      y: newY,
-      width: newWidth,
-      height: newHeight
-    };
-  }
-
-  private resizeNodes(newDimensions: Rect, initialRect: Rect): void {
-
   }
 
   private resizeEnd(event: MouseEvent): void {
     this.isResizing = false;
-    this.activeAnchor = null;
-    this.resizeStartPos = null;
-    this.initialRect = null;
-    this.initialScale = null;
+    this.updateBoundingBox();
+  }
+
+  private resetTransform(): void {
+    this.border?.destroy();
+    this.border = null;
   }
 
   public add(nodes: Shape[]): void {
-    if (nodes.length === 0) return;
-
-    this.cleanup();
-    this.nodes = nodes;
-    
-    const rect = nodes.length > 1 
-      ? this.getBorderOfNodes(nodes)
-      : nodes[0].getBoundingRect();
-
-    this.nodes.forEach(item => item.setAttr("draggable", false))
-    this.createBorder(rect as Rect);
-    this.createAnchors();
-  }
-
-  private cleanup(): void {
-    this.anchors.forEach(anchor => anchor.destroy());
-    this.anchors = [];
-    this.border?.destroy();
-    this.border = null;
+    this.nodes = []
+    this.nodes = this.nodes.concat(nodes);
+    this.initTransformer();
+    this.createBorder();
+    this.createSides();
   }
 }

@@ -100,6 +100,10 @@ export class Radial {
                 }
             });
 
+            if(target == undefined) {
+                target = this;
+            }
+
             const customEvent = this.createCustomEvent(event, target);
             this.emit("click", customEvent);
         });
